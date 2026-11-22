@@ -1,0 +1,5 @@
+chondrite-schema 1
+schema Chondrite.Store.Tests.Records.Pascals
+{
+    0: fValue float64
+}

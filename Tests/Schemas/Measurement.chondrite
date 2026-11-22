@@ -1,0 +1,14 @@
+chondrite-schema 1
+schema Chondrite.Store.Tests.Records.Measurement
+{
+    0: idNonce nonce
+    1: vecPosition vector3f
+    2: uPressure Chondrite.Store.Tests.Records.Pascals
+    3: astrTags utf8[]
+    4: strDescription optional<utf8>
+    5: abyData bytes
+    6: idReference objectid
+    7: avecBounds vector2f[2]
+    8: vecColor optional<vector4f>
+    9: auHistory Chondrite.Store.Tests.Records.Pascals[]
+}

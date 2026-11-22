@@ -1,0 +1,53 @@
+name: Publish NuGet
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          PACKAGE_VERSION="${GITHUB_REF_NAME#v}"
+          if [[ ! "$PACKAGE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version tag: ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          echo "version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+      - name: Restore
+        run: dotnet restore Chondrite.Store.slnx
+      - name: Build
+        run: dotnet build Chondrite.Store.slnx --configuration Release --no-restore /p:Version=${{ steps.version.outputs.version }}
+      - name: Test
+        run: dotnet test --solution Chondrite.Store.slnx --configuration Release --no-build
+      - name: Pack
+        run: dotnet pack src/Chondrite.Store/Chondrite.Store.csproj --configuration Release --no-build --output artifacts /p:PackageVersion=${{ steps.version.outputs.version }}
+      - name: Verify package in a consuming project
+        run: python scripts/package-smoke.py --package artifacts/*.nupkg
+      - name: Authenticate to NuGet.org
+        uses: NuGet/login@v1
+        id: nuget
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - name: Publish
+        run: >
+          dotnet nuget push
+          "artifacts/*.nupkg"
+          --api-key "${{ steps.nuget.outputs.NUGET_API_KEY }}"
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
