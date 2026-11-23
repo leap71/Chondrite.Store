@@ -180,6 +180,64 @@ public class BinarySerializationTests
     }
 
     [Fact]
+    public void CollectionGuardRejectsBeforeAllocationAndSharesNestedBudget()
+    {
+        StorageBinaryReader oReader = new(new byte[16],
+            new StorageDecodeLimits(nMaxCollectionElements: 3, nMaxMaterializedBytes: 50));
+        oReader.GuardCollectionCount(2, 4);
+        bool bRejected = false;
+        try { oReader.GuardCollectionCount(2, 0); }
+        catch (InvalidDataException) { bRejected = true; }
+        Assert.True(bRejected);
+        oReader.GuardCollectionCount(1, 8);
+        oReader.GuardCollectionCount(0, 0);
+        bRejected = false;
+        try { oReader.GuardCollectionCount(1, 0); }
+        catch (InvalidDataException) { bRejected = true; }
+        Assert.True(bRejected);
+    }
+
+    [Fact]
+    public void CollectionGuardChecksRemainingBytesWithoutOverflow()
+    {
+        StorageBinaryReader oReader = new(new byte[12],
+            new StorageDecodeLimits(int.MaxValue, long.MaxValue));
+        oReader.GuardCollectionCount(3, 4);
+        bool bTooShort = false;
+        try { oReader.GuardCollectionCount(1, 13); }
+        catch (InvalidDataException) { bTooShort = true; }
+        Assert.True(bTooShort);
+        bTooShort = false;
+        try { oReader.GuardCollectionCount(int.MaxValue, int.MaxValue); }
+        catch (InvalidDataException) { bTooShort = true; }
+        Assert.True(bTooShort);
+        bool bInvalidWidth = false;
+        try { oReader.GuardCollectionCount(1, -1); }
+        catch (ArgumentOutOfRangeException) { bInvalidWidth = true; }
+        Assert.True(bInvalidWidth);
+    }
+
+    [Fact]
+    public void MaterializedByteLimitsAccumulateAcrossFields()
+    {
+        StorageBinaryWriter oWriter = new();
+        oWriter.WriteUtf8("AB");
+        oWriter.WriteBytes([1, 2, 3]);
+        byte[] aby = oWriter.aToArray();
+        StorageBinaryReader oReader = new(aby, new StorageDecodeLimits(10, 4));
+        Assert.Equal("AB", oReader.ReadUtf8());
+        bool bRejected = false;
+        try { _ = oReader.ReadBytes(); }
+        catch (InvalidDataException) { bRejected = true; }
+        Assert.True(bRejected);
+
+        StorageBinaryReader oExact = new(aby, new StorageDecodeLimits(10, 5));
+        Assert.Equal("AB", oExact.ReadUtf8());
+        Assert.Equal(new byte[] { 1, 2, 3 }, oExact.ReadBytes());
+        oExact.EnsureEnd();
+    }
+
+    [Fact]
     public void MalformedValuesTruncationAndTrailingDataAreRejected()
     {
         Assert.Throws<InvalidDataException>(() =>

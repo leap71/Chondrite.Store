@@ -27,6 +27,19 @@ public sealed class GeneratedRecordTests
     }
 
     [Fact]
+    public void PascalV1GoldenSchemaPayloadAndObjectIdentityRemainStable()
+    {
+        Assert.Equal("BEA2362A5F43FA260363BBBA4A50517461D0211774E358C8D1A7B4CB41B86274",
+            Pascals.idSchema.idSchema.ToString());
+        Pascals oPascals = new(101325.0);
+        StorageObject oObject = Pascals.oSerialize(in oPascals);
+        Assert.Equal("00000000D0BCF840", Convert.ToHexString(oObject.abyData.AsSpan()));
+        Assert.Equal("AC7D49F62B32E4AEF5252383B40E69D35CFDDD71D2DF955459D7F554B2F0C961",
+            oObject.idCalculateIdentity().ToString());
+        Assert.Equal(oPascals.fValue, Pascals.oDeserialize(oObject).fValue);
+    }
+
+    [Fact]
     public void GenericRecordContractPublishesDependenciesAndDeduplicates()
     {
         TestObjectStore oStore = new();

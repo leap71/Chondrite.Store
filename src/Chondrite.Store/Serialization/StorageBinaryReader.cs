@@ -15,12 +15,19 @@ public ref struct StorageBinaryReader
     private static readonly UTF8Encoding c_oUtf8 = new(false, true);
     private readonly ReadOnlySpan<byte> m_abyData;
     private int m_nOffset;
+    private int m_nRemainingCollectionElements;
+    private long m_nRemainingMaterializedBytes;
 
     /// <summary>Reads from the supplied encoded record without copying its bytes.</summary>
-    public StorageBinaryReader(ReadOnlySpan<byte> abyData)
+    public StorageBinaryReader(ReadOnlySpan<byte> abyData, StorageDecodeLimits? oLimits = null)
     {
+        StorageDecodeLimits oEffective = oLimits ?? StorageDecodeLimits.oDefault;
+        if (oEffective.nMaxCollectionElements < 0 || oEffective.nMaxMaterializedBytes < 0)
+            throw new ArgumentOutOfRangeException(nameof(oLimits));
         m_abyData = abyData;
         m_nOffset = 0;
+        m_nRemainingCollectionElements = oEffective.nMaxCollectionElements;
+        m_nRemainingMaterializedBytes = oEffective.nMaxMaterializedBytes;
     }
 
     /// <summary>The number of unread bytes.</summary>
@@ -99,16 +106,43 @@ public ref struct StorageBinaryReader
         return (int)nCount;
     }
 
+    /// <summary>
+    /// Accounts for an entire collection before the generated codec allocates its builder.
+    /// A positive lower bound also establishes that enough encoded bytes remain.
+    /// The element budget is shared by all nested arrays using this reader.
+    /// </summary>
+    public void GuardCollectionCount(int nCount, int nMinimumElementBytes)
+    {
+        if (nCount < 0 || nMinimumElementBytes < 0)
+            throw new ArgumentOutOfRangeException();
+        if (nCount > m_nRemainingCollectionElements)
+            throw new InvalidDataException("Collection exceeds the remaining decode element budget.");
+        if (nMinimumElementBytes > 0 && nCount > nRemaining / nMinimumElementBytes)
+            throw new InvalidDataException("Collection cannot fit in the remaining encoded payload.");
+        m_nRemainingCollectionElements -= nCount;
+    }
+
+    private void GuardMaterializedBytes(int nCount)
+    {
+        if (nCount < 0 || nCount > nRemaining)
+            throw new InvalidDataException("Truncated or invalid persisted record.");
+        if (nCount > m_nRemainingMaterializedBytes)
+            throw new InvalidDataException("Materialized data exceeds the decode byte budget.");
+        m_nRemainingMaterializedBytes -= nCount;
+    }
+
     /// <summary>Reads a byte-count-prefixed UTF-8 string, rejecting malformed UTF-8.</summary>
     public string ReadUtf8()
     {
         int nCount = ReadCount();
+        GuardMaterializedBytes(nCount);
         return c_oUtf8.GetString(Read(nCount));
     }
     /// <summary>Reads an unsigned 64-bit count followed by that many bytes.</summary>
     public ImmutableArray<byte> ReadBytes()
     {
         int nCount = ReadCount();
+        GuardMaterializedBytes(nCount);
         return ImmutableArray.CreateRange(Read(nCount).ToArray());
     }
 }
